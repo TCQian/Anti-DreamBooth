@@ -580,7 +580,6 @@ def main(args):
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
-        log_with=args.report_to,
     )
 
     # Currently, it's not possible to do gradient accumulation when training two models with accelerate.accumulate
