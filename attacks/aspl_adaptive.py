@@ -512,28 +512,44 @@ def train_one_epoch(
     return [unet, text_encoder]
 
 
-def adaptive_frequency_attack(image, steps=5, alpha=0.005):
+def adaptive_frequency_attack(image, steps=5, alpha=0.005, freq_weight_power=1.0):
     """
     Applies an adaptive frequency perturbation in the DCT domain on a per-channel basis.
     Input image is assumed to be a numpy array with shape [C, H, W] and values in [0, 1].
+    freq_weight_power: controls bias towards low frequencies (higher value -> more low-frequency emphasis)
     """
     perturbed = image.copy()
+    C, H, W = perturbed.shape
+    # Create a frequency weight mask that emphasizes low frequencies
+    # For an HxW DCT block, frequencies near (0,0) get higher weights.
+    u = np.arange(H).reshape(-1, 1)
+    v = np.arange(W).reshape(1, -1)
+    # Using inverse of distance from the top-left corner (plus epsilon)
+    freq_weights = 1.0 / (np.sqrt(u**2 + v**2) + 1e-8)
+    freq_weights = freq_weights**freq_weight_power  # adjust power for more bias
+    # Normalize weights to have mean 1 (optional)
+    freq_weights = freq_weights / np.mean(freq_weights)
+
     for _ in range(steps):
         update = np.zeros_like(perturbed)
-        for c in range(perturbed.shape[0]):
+        # Process each channel; could be vectorized if cv2.dct supports batches.
+        for c in range(C):
             channel = perturbed[c]
-            dct_channel = cv2.dct(channel.astype(np.float32))
+            # Convert channel to float32 for DCT
+            channel = channel.astype(np.float32)
+            dct_channel = cv2.dct(channel)
             abs_dct = cv2.convertScaleAbs(dct_channel)
             grad_x = cv2.Sobel(abs_dct, cv2.CV_64F, 1, 0, ksize=3)
             grad_y = cv2.Sobel(abs_dct, cv2.CV_64F, 0, 1, ksize=3)
             mask = np.sqrt(grad_x**2 + grad_y**2)
+            # Normalize mask
             mask = mask / (mask.max() + 1e-8)
-            dct_perturb = alpha * mask
+            # Apply frequency weighting: multiply the perturbation by freq_weights
+            dct_perturb = alpha * mask * freq_weights
             dct_channel_updated = dct_channel + dct_perturb
             channel_updated = cv2.idct(dct_channel_updated)
             update[c] = channel_updated - channel
-        perturbed = perturbed + update
-        perturbed = np.clip(perturbed, 0, 1)
+        perturbed = np.clip(perturbed + update, 0, 1)
     return torch.tensor(perturbed)
 
 
@@ -547,9 +563,9 @@ def pgd_attack(
     original_images: torch.Tensor,
     target_tensor: torch.Tensor,
     num_steps: int,
+    alpha_dct=0.005,  # expose alpha_dct as an argument
 ):
     """Return new perturbed data with an additional adaptive frequency perturbation step"""
-
     unet, text_encoder = models
     weight_dtype = torch.bfloat16
     device = torch.device("cuda")
@@ -576,10 +592,9 @@ def pgd_attack(
         ).latent_dist.sample()
         latents = latents * vae.config.scaling_factor
 
-        # Sample noise that we'll add to the latents
+        # Sample noise to add to latents
         noise = torch.randn_like(latents)
         bsz = latents.shape[0]
-        # Sample a random timestep for each image
         timesteps = torch.randint(
             0, noise_scheduler.config.num_train_timesteps, (bsz,), device=latents.device
         )
@@ -638,17 +653,12 @@ def pgd_attack(
         batch_size = perturbed_images_cpu.shape[0]
         perturbed_list = []
         for i in range(batch_size):
-            # Convert image tensor (C, H, W) from [-1, 1] to [0, 1]
             img = perturbed_images_cpu[i]
             img_np = ((img + 1) / 2.0).numpy()
-            # Apply adaptive frequency attack per image.
-            # You may adjust steps and alpha_dct as needed.
-            alpha_dct = 0.005  # You can also pass this from args if desired.
             img_np_perturbed = adaptive_frequency_attack(
                 img_np, steps=1, alpha=alpha_dct
             ).numpy()
             perturbed_list.append(torch.tensor(img_np_perturbed))
-        # Stack the batch and convert back to device with range [0, 1], then re-normalize to [-1, 1]
         perturbed_images = torch.stack(perturbed_list, dim=0)
         perturbed_images = perturbed_images * 2 - 1
         # -----------------------------------------------------
