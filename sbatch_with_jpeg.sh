@@ -49,11 +49,11 @@ export CLASS_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/class-person"
 
 
 # ------------------------- Compress instance images -------------------------
-python jpeg_compress.py $OUTPUT_DIR/noise-ckpt/50 --quality 75 --output_dir $OUTPUT_DIR/noise-ckpt/50/compressed
+python jpeg_compress.py $OUTPUT_DIR/noise-ckpt/50 --quality 75 --output_dir $OUTPUT_DIR/noise-ckpt/50_compressed
 
 
 # ------------------------- Train DreamBooth on perturbed examples -------------------------
-export INSTANCE_DIR="$OUTPUT_DIR/noise-ckpt/50/compressed"
+export INSTANCE_DIR="$OUTPUT_DIR/noise-ckpt/50_compressed"
 export DREAMBOOTH_OUTPUT_DIR="outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH_compressed"
 
 accelerate launch train_dreambooth.py \
