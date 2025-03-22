@@ -649,7 +649,7 @@ def pgd_attack(
             ).numpy()
             perturbed_list.append(torch.tensor(img_np_perturbed))
         # Stack the batch and convert back to device with range [0, 1], then re-normalize to [-1, 1]
-        perturbed_images = torch.stack(perturbed_list, dim=0).to(device)
+        perturbed_images = torch.stack(perturbed_list, dim=0)
         perturbed_images = perturbed_images * 2 - 1
         # -----------------------------------------------------
 
