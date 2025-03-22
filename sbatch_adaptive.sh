@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=dreambooth            # Job name
+#SBATCH --job-name=dreambooth_compress   # Job name
 #SBATCH --time=48:00:00                  # Time limit hrs:min:sec
 #SBATCH --gres=gpu:a100-40:1
 #SBATCH --mail-type=ALL                  # Get email for all status updates
@@ -10,7 +10,7 @@
 source ~/.bashrc
 conda activate dreambooth
 
-export EXPERIMENT_NAME="ASPL"
+export EXPERIMENT_NAME="ASPL_adaptive"
 export MODEL_PATH="/home/e/e0407638/github/Anti-DreamBooth/stable-diffusion"
 export CLEAN_TRAIN_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_A" 
 export CLEAN_ADV_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B"
@@ -48,8 +48,12 @@ accelerate launch attacks/aspl.py \
   --pgd_eps=5e-2 
 
 
+# ------------------------- Compress instance images -------------------------
+python jpeg_compress.py $OUTPUT_DIR/noise-ckpt/50 --quality 75 --output_dir $OUTPUT_DIR/noise-ckpt/50/compressed
+
+
 # ------------------------- Train DreamBooth on perturbed examples -------------------------
-export INSTANCE_DIR="$OUTPUT_DIR/noise-ckpt/50"
+export INSTANCE_DIR="$OUTPUT_DIR/noise-ckpt/50/compressed"
 export DREAMBOOTH_OUTPUT_DIR="outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH"
 
 accelerate launch train_dreambooth.py \

@@ -11,7 +11,7 @@ source ~/.bashrc
 conda activate dreambooth
 
 export EXPERIMENT_NAME="ASPL"
-export MODEL_PATH="/home/e/e0407638/github/Anti-DreamBooth/stable-diffusion/stable-diffusion-2-1-base"
+export MODEL_PATH="/home/e/e0407638/github/Anti-DreamBooth/stable-diffusion"
 export CLEAN_TRAIN_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_A" 
 export CLEAN_ADV_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B"
 export OUTPUT_DIR="/home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_ADVERSARIAL"
