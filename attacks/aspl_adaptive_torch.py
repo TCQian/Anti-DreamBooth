@@ -662,7 +662,7 @@ def pgd_attack(
 
         print(f"[Step {step}] Loss1: {loss.item():.4f} | Loss2: {loss_2.item():.4f}")
 
-    return perturbed_images
+    return perturbed_images.cpu()
 
 
 def main(args):
