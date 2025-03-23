@@ -29,6 +29,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PretrainedConfig
+from skimage.feature import local_binary_pattern
 
 
 logger = get_logger(__name__)
@@ -512,44 +513,55 @@ def train_one_epoch(
     return [unet, text_encoder]
 
 
-def adaptive_frequency_attack(image, steps=5, alpha=0.005, freq_weight_power=1.0):
+def adaptive_frequency_attack(image, steps=5, alpha=0.005):
     """
-    Applies an adaptive frequency perturbation in the DCT domain on a per-channel basis.
+    Applies an adaptive frequency perturbation in the DCT domain on a per-channel basis,
+    incorporating advanced image processing techniques.
     Input image is assumed to be a numpy array with shape [C, H, W] and values in [0, 1].
-    freq_weight_power: controls bias towards low frequencies (higher value -> more low-frequency emphasis)
     """
     perturbed = image.copy()
-    C, H, W = perturbed.shape
-    # Create a frequency weight mask that emphasizes low frequencies
-    # For an HxW DCT block, frequencies near (0,0) get higher weights.
-    u = np.arange(H).reshape(-1, 1)
-    v = np.arange(W).reshape(1, -1)
-    # Using inverse of distance from the top-left corner (plus epsilon)
-    freq_weights = 1.0 / (np.sqrt(u**2 + v**2) + 1e-8)
-    freq_weights = freq_weights**freq_weight_power  # adjust power for more bias
-    # Normalize weights to have mean 1 (optional)
-    freq_weights = freq_weights / np.mean(freq_weights)
-
     for _ in range(steps):
         update = np.zeros_like(perturbed)
-        # Process each channel; could be vectorized if cv2.dct supports batches.
-        for c in range(C):
+        for c in range(perturbed.shape[0]):
             channel = perturbed[c]
-            # Convert channel to float32 for DCT
-            channel = channel.astype(np.float32)
-            dct_channel = cv2.dct(channel)
-            abs_dct = cv2.convertScaleAbs(dct_channel)
-            grad_x = cv2.Sobel(abs_dct, cv2.CV_64F, 1, 0, ksize=3)
-            grad_y = cv2.Sobel(abs_dct, cv2.CV_64F, 0, 1, ksize=3)
-            mask = np.sqrt(grad_x**2 + grad_y**2)
-            # Normalize mask
-            mask = mask / (mask.max() + 1e-8)
-            # Apply frequency weighting: multiply the perturbation by freq_weights
-            dct_perturb = alpha * mask * freq_weights
+            
+            # Convert to 8-bit grayscale image for processing
+            channel_gray = (channel * 255).astype(np.uint8)
+            
+            # 1. Advanced Edge Detection using Canny
+            edges = cv2.Canny(channel_gray, threshold1=100, threshold2=200)
+            edges = edges.astype(np.float32) / 255.0
+            
+            # 2. Texture Analysis using Gabor Filters
+            gabor_kernel = cv2.getGaborKernel(ksize=(5, 5), sigma=1.0, theta=0, lambd=10.0, gamma=0.5, psi=0)
+            gabor_response = cv2.filter2D(channel_gray, cv2.CV_32F, gabor_kernel)
+            gabor_response = np.abs(gabor_response)
+            gabor_response = (gabor_response - gabor_response.min()) / (gabor_response.max() - gabor_response.min() + 1e-8)
+            
+            # 3. Texture Analysis using Local Binary Patterns (LBP)
+            lbp = local_binary_pattern(channel_gray, P=8, R=1, method='uniform')
+            lbp = lbp.astype(np.float32)
+            lbp = (lbp - lbp.min()) / (lbp.max() - lbp.min() + 1e-8)
+            
+            # Combine edge and texture information into a single mask
+            combined_mask = (edges + gabor_response + lbp) / 3.0
+            
+            # 4. Frequency Domain Analysis using DCT
+            dct_channel = cv2.dct(channel.astype(np.float32))
+            abs_dct = np.abs(dct_channel)
+            abs_dct = (abs_dct - abs_dct.min()) / (abs_dct.max() - abs_dct.min() + 1e-8)
+            
+            # Apply combined mask to DCT coefficients
+            dct_perturb = alpha * combined_mask * abs_dct
             dct_channel_updated = dct_channel + dct_perturb
+            
+            # Inverse DCT to obtain the perturbed channel
             channel_updated = cv2.idct(dct_channel_updated)
             update[c] = channel_updated - channel
-        perturbed = np.clip(perturbed + update, 0, 1)
+        
+        perturbed = perturbed + update
+        perturbed = np.clip(perturbed, 0, 1)
+    
     return torch.tensor(perturbed)
 
 
