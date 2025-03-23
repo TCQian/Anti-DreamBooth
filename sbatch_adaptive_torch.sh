@@ -41,7 +41,8 @@ accelerate launch attacks/aspl_adaptive_torch.py \
   --train_batch_size=1 \
   --max_train_steps=50 \
   --max_f_train_steps=3 \
-  --max_adv_train_steps=6 \
+  # changed: --max_adv_train_steps=6 \
+  --max_adv_train_steps=20 \ 
   --checkpointing_iterations=10 \
   --learning_rate=5e-7 \
   --pgd_alpha=5e-3 \
