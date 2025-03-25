@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#SBATCH --job-name=dreambooth_adaptive_self   # Job name
-#SBATCH --time=48:00:00                  # Time limit hrs:min:sec
+#SBATCH --job-name=dreambooth_fsmg   # Job name
+#SBATCH --time=6:00:00                 # Time limit hrs:min:sec
 #SBATCH --gres=gpu:a100-40:1
 #SBATCH --mail-type=ALL                  # Get email for all status updates
 #SBATCH --mail-user=e0407638@u.nus.edu   # Email for notifications

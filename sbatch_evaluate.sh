@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name=dreambooth_evaluate   # Job name
-#SBATCH --time=48:00:00                  # Time limit hrs:min:sec
+#SBATCH --time=6:00:00                 # Time limit hrs:min:sec
 #SBATCH --gres=gpu:nv:1
 #SBATCH --mail-type=ALL                  # Get email for all status updates
 #SBATCH --mail-user=e0407638@u.nus.edu   # Email for notifications
