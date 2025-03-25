@@ -29,7 +29,12 @@ import transformers
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
-from diffusers import AutoencoderKL, DDPMScheduler, StableDiffusionPipeline, UNet2DConditionModel
+from diffusers import (
+    AutoencoderKL,
+    DDPMScheduler,
+    StableDiffusionPipeline,
+    UNet2DConditionModel,
+)
 from diffusers.utils import check_min_version
 from diffusers.utils.import_utils import is_xformers_available
 from PIL import Image
@@ -45,7 +50,9 @@ check_min_version("0.13.0.dev0")
 logger = get_logger(__name__)
 
 
-def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
+def import_model_class_from_model_name_or_path(
+    pretrained_model_name_or_path: str, revision: str
+):
     text_encoder_config = PretrainedConfig.from_pretrained(
         pretrained_model_name_or_path,
         subfolder="text_encoder",
@@ -58,7 +65,9 @@ def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: st
 
         return CLIPTextModel
     elif model_class == "RobertaSeriesModelWithTransformation":
-        from diffusers.pipelines.alt_diffusion.modeling_roberta_series import RobertaSeriesModelWithTransformation
+        from diffusers.pipelines.alt_diffusion.modeling_roberta_series import (
+            RobertaSeriesModelWithTransformation,
+        )
 
         return RobertaSeriesModelWithTransformation
     else:
@@ -110,7 +119,9 @@ def parse_args(input_args=None):
         default="text-inversion-model",
         help="The output directory where the model predictions and checkpoints will be written.",
     )
-    parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
+    parser.add_argument(
+        "--seed", type=int, default=None, help="A seed for reproducible training."
+    )
     parser.add_argument(
         "--resolution",
         type=int,
@@ -161,7 +172,9 @@ def parse_args(input_args=None):
         action="store_true",
         help="Whether or not to use gradient checkpointing to save memory at the expense of slower backward pass.",
     )
-    parser.add_argument("--max_grad_norm", default=1.0, type=float, help="Max gradient norm.")
+    parser.add_argument(
+        "--max_grad_norm", default=1.0, type=float, help="Max gradient norm."
+    )
     parser.add_argument(
         "--logging_dir",
         type=str,
@@ -252,7 +265,9 @@ class DreamBoothDataset(Dataset):
 
         self.instance_data_root = Path(instance_data_root)
         if not self.instance_data_root.exists():
-            raise ValueError(f"Instance {self.instance_data_root} images root doesn't exists.")
+            raise ValueError(
+                f"Instance {self.instance_data_root} images root doesn't exists."
+            )
 
         self.instance_images_path = list(Path(instance_data_root).iterdir())
         self.num_instance_images = len(self.instance_images_path)
@@ -271,8 +286,14 @@ class DreamBoothDataset(Dataset):
 
         self.image_transforms = transforms.Compose(
             [
-                transforms.Resize(size, interpolation=transforms.InterpolationMode.BILINEAR),
-                transforms.CenterCrop(size) if center_crop else transforms.RandomCrop(size),
+                transforms.Resize(
+                    size, interpolation=transforms.InterpolationMode.BILINEAR
+                ),
+                (
+                    transforms.CenterCrop(size)
+                    if center_crop
+                    else transforms.RandomCrop(size)
+                ),
                 transforms.ToTensor(),
                 transforms.Normalize([0.5], [0.5]),
             ]
@@ -283,7 +304,9 @@ class DreamBoothDataset(Dataset):
 
     def __getitem__(self, index):
         example = {}
-        instance_image = Image.open(self.instance_images_path[index % self.num_instance_images])
+        instance_image = Image.open(
+            self.instance_images_path[index % self.num_instance_images]
+        )
         if not instance_image.mode == "RGB":
             instance_image = instance_image.convert("RGB")
         example["instance_images"] = self.image_transforms(instance_image)
@@ -296,7 +319,9 @@ class DreamBoothDataset(Dataset):
         ).input_ids
 
         if self.class_data_root:
-            class_image = Image.open(self.class_images_path[index % self.num_class_images])
+            class_image = Image.open(
+                self.class_images_path[index % self.num_class_images]
+            )
             if not class_image.mode == "RGB":
                 class_image = class_image.convert("RGB")
             example["class_images"] = self.image_transforms(class_image)
@@ -344,10 +369,12 @@ class PromptDataset(Dataset):
         return example
 
 
-def infer(checkpoint_path, prompts=None, n_img=16, bs=8, n_steps=100, guidance_scale=7.5):
-    pipe = StableDiffusionPipeline.from_pretrained(checkpoint_path, torch_dtype=torch.float16, safety_checker=None).to(
-        "cuda"
-    )
+def infer(
+    checkpoint_path, prompts=None, n_img=16, bs=8, n_steps=100, guidance_scale=7.5
+):
+    pipe = StableDiffusionPipeline.from_pretrained(
+        checkpoint_path, torch_dtype=torch.float16, safety_checker=None
+    ).to("cuda")
 
     for prompt in prompts:
         norm_prompt = prompt.lower().replace(",", "").replace(" ", "_")
@@ -370,14 +397,16 @@ def main(args):
     accelerator = Accelerator(
         gradient_accumulation_steps=args.gradient_accumulation_steps,
         mixed_precision=args.mixed_precision,
-        log_with=args.report_to,
-        logging_dir=logging_dir,
     )
 
     # Currently, it's not possible to do gradient accumulation when training two models with accelerate.accumulate
     # This will be enabled soon in accelerate. For now, we don't allow gradient accumulation when training two models.
     # TODO (patil-suraj): Remove this check when gradient accumulation with two models is enabled in accelerate.
-    if args.train_text_encoder and args.gradient_accumulation_steps > 1 and accelerator.num_processes > 1:
+    if (
+        args.train_text_encoder
+        and args.gradient_accumulation_steps > 1
+        and accelerator.num_processes > 1
+    ):
         raise ValueError(
             "Gradient accumulation is not supported when training the text encoder in distributed training. "
             "Please set gradient_accumulation_steps to 1. This feature will be supported in the future."
@@ -408,7 +437,9 @@ def main(args):
 
     # Load the tokenizer
     if args.tokenizer_name:
-        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, revision=args.revision, use_fast=False)
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.tokenizer_name, revision=args.revision, use_fast=False
+        )
     elif args.pretrained_model_name_or_path:
         tokenizer = AutoTokenizer.from_pretrained(
             args.pretrained_model_name_or_path,
@@ -418,16 +449,22 @@ def main(args):
         )
 
     # import correct text encoder class
-    text_encoder_cls = import_model_class_from_model_name_or_path(args.pretrained_model_name_or_path, args.revision)
+    text_encoder_cls = import_model_class_from_model_name_or_path(
+        args.pretrained_model_name_or_path, args.revision
+    )
 
     # Load scheduler and models
-    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
+    noise_scheduler = DDPMScheduler.from_pretrained(
+        args.pretrained_model_name_or_path, subfolder="scheduler"
+    )
     text_encoder = text_encoder_cls.from_pretrained(
         args.pretrained_model_name_or_path,
         subfolder="text_encoder",
         revision=args.revision,
     )
-    vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision)
+    vae = AutoencoderKL.from_pretrained(
+        args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision
+    )
     unet = UNet2DConditionModel.from_pretrained(
         args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision
     )
@@ -440,7 +477,9 @@ def main(args):
         if is_xformers_available():
             unet.enable_xformers_memory_efficient_attention()
         else:
-            raise ValueError("xformers is not available. Make sure it is installed correctly")
+            raise ValueError(
+                "xformers is not available. Make sure it is installed correctly"
+            )
 
     if args.gradient_checkpointing:
         unet.enable_gradient_checkpointing()
@@ -458,7 +497,10 @@ def main(args):
             f"Unet loaded as datatype {accelerator.unwrap_model(unet).dtype}. {low_precision_error_string}"
         )
 
-    if args.train_text_encoder and accelerator.unwrap_model(text_encoder).dtype != torch.float32:
+    if (
+        args.train_text_encoder
+        and accelerator.unwrap_model(text_encoder).dtype != torch.float32
+    ):
         raise ValueError(
             f"Text encoder loaded as datatype {accelerator.unwrap_model(text_encoder).dtype}."
             f" {low_precision_error_string}"
@@ -479,7 +521,9 @@ def main(args):
     )
 
     # Prepare for PGD
-    pertubed_images = [Image.open(i).convert("RGB") for i in train_dataset.instance_images_path]
+    pertubed_images = [
+        Image.open(i).convert("RGB") for i in train_dataset.instance_images_path
+    ]
     pertubed_images = [train_dataset.image_transforms(i) for i in pertubed_images]
     pertubed_images = torch.stack(pertubed_images).contiguous()
     pertubed_images.requires_grad_()
@@ -527,16 +571,31 @@ def main(args):
 
     if args.target_image_path is not None:
         target_image_path = Path(args.target_image_path)
-        assert target_image_path.is_file(), f"Target image path {target_image_path} does not exist"
+        assert (
+            target_image_path.is_file()
+        ), f"Target image path {target_image_path} does not exist"
 
-        target_image = Image.open(target_image_path).convert("RGB").resize((args.resolution, args.resolution))
+        target_image = (
+            Image.open(target_image_path)
+            .convert("RGB")
+            .resize((args.resolution, args.resolution))
+        )
         target_image = np.array(target_image)[None].transpose(0, 3, 1, 2)
 
-        target_image_tensor = torch.from_numpy(target_image).to(accelerator.device, dtype=torch.float32) / 127.5 - 1.0
-        target_latent_tensor = (
-            vae.encode(target_image_tensor).latent_dist.sample().to(dtype=torch.bfloat16) * vae.config.scaling_factor
+        target_image_tensor = (
+            torch.from_numpy(target_image).to(accelerator.device, dtype=torch.float32)
+            / 127.5
+            - 1.0
         )
-        target_latent_tensor = target_latent_tensor.repeat(len(pertubed_images), 1, 1, 1).cuda()
+        target_latent_tensor = (
+            vae.encode(target_image_tensor)
+            .latent_dist.sample()
+            .to(dtype=torch.bfloat16)
+            * vae.config.scaling_factor
+        )
+        target_latent_tensor = target_latent_tensor.repeat(
+            len(pertubed_images), 1, 1, 1
+        ).cuda()
 
     # Only show the progress bar once on each machine.
     progress_bar = tqdm(
@@ -553,7 +612,9 @@ def main(args):
             # Convert images to latent space
             # for PGD, we ignore all the batch["pixel_values"] etc...
             pertubed_images.requires_grad = True
-            latents = vae.encode(pertubed_images.to(accelerator.device).to(dtype=weight_dtype)).latent_dist.sample()
+            latents = vae.encode(
+                pertubed_images.to(accelerator.device).to(dtype=weight_dtype)
+            ).latent_dist.sample()
             latents = latents * vae.config.scaling_factor  # N=4, C, 64, 64
 
             # Sample noise that we'll add to the latents
@@ -584,7 +645,9 @@ def main(args):
             elif noise_scheduler.config.prediction_type == "v_prediction":
                 target = noise_scheduler.get_velocity(latents, noise, timesteps)
             else:
-                raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
+                raise ValueError(
+                    f"Unknown prediction type {noise_scheduler.config.prediction_type}"
+                )
 
             unet.zero_grad()
             text_encoder.zero_grad()
@@ -602,7 +665,9 @@ def main(args):
                         for idx in range(len(model_pred))
                     ]
                 )
-                xtm1_target = noise_scheduler.add_noise(target_latent_tensor, noise, timesteps - 1)
+                xtm1_target = noise_scheduler.add_noise(
+                    target_latent_tensor, noise, timesteps - 1
+                )
                 loss = loss - F.mse_loss(xtm1_pred, xtm1_target)
 
             accelerator.backward(loss)
@@ -621,7 +686,9 @@ def main(args):
 
             adv_images = pertubed_images + alpha * pertubed_images.grad.sign()
             eta = torch.clamp(adv_images - original_images, min=-eps, max=+eps)
-            pertubed_images = torch.clamp(original_images + eta, min=-1, max=+1).detach_()
+            pertubed_images = torch.clamp(
+                original_images + eta, min=-1, max=+1
+            ).detach_()
 
         # Checks if the accelerator has performed an optimization step behind the scenes
         if accelerator.sync_gradients:
@@ -634,12 +701,20 @@ def main(args):
                     os.makedirs(save_folder, exist_ok=True)
                     noised_imgs = pertubed_images.detach()
                     img_names = [
-                        str(instance_path).split("/")[-1] for instance_path in train_dataset.instance_images_path
+                        str(instance_path).split("/")[-1]
+                        for instance_path in train_dataset.instance_images_path
                     ]
                     for img_pixel, img_name in zip(noised_imgs, img_names):
-                        save_path = os.path.join(save_folder, f"{global_step}_noise_{img_name}")
+                        save_path = os.path.join(
+                            save_folder, f"{global_step}_noise_{img_name}"
+                        )
                         Image.fromarray(
-                            (img_pixel * 127.5 + 128).clamp(0, 255).to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+                            (img_pixel * 127.5 + 128)
+                            .clamp(0, 255)
+                            .to(torch.uint8)
+                            .permute(1, 2, 0)
+                            .cpu()
+                            .numpy()
                         ).save(save_path)
                     print(f"Saved noise at step {global_step} to {save_folder}")
 
