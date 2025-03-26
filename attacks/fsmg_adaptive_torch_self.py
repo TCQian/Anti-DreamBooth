@@ -674,7 +674,7 @@ def main(args):
 
             # --- Step 2: Diffusion Forward Pass ---
             latents = vae.encode(
-                images_freq_perturbed.to(dtype=weight_dtype)
+                images_freq_perturbed.to(accelerator.device, dtype=weight_dtype)
             ).latent_dist.sample()
             latents = latents * vae.config.scaling_factor  # N=4, C, 64, 64
 
