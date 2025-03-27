@@ -23,7 +23,7 @@ mkdir -p $OUTPUT_DIR
 cp -r $CLEAN_TRAIN_DIR $OUTPUT_DIR/image_clean
 cp -r $CLEAN_ADV_DIR $OUTPUT_DIR/image_before_addding_noise
 
-accelerate launch attacks/aspl_adaptive_torch.py \
+accelerate launch attacks/aspl_adaptive_torch_self.py \
   --pretrained_model_name_or_path=$MODEL_PATH  \
   --enable_xformers_memory_efficient_attention \
   --instance_data_dir_for_train=$CLEAN_TRAIN_DIR \
@@ -118,10 +118,10 @@ conda activate dreambooth-evaluate
 
 
 python evaluations/ism_fdfr.py \
-    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/ASPL_adaptive_torch_self/n000050_DREAMBOOTH/checkpoint-1000/dreambooth/a_photo_of_sks_person \
+    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH/checkpoint-1000/dreambooth/a_photo_of_sks_person \
     --emb_dirs /home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B
 
 
 python evaluations/ism_fdfr.py \
-    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/ASPL_adaptive_torch_self/n000050_DREAMBOOTH_compressed/checkpoint-1000/dreambooth/a_photo_of_sks_person \
+    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH_compressed/checkpoint-1000/dreambooth/a_photo_of_sks_person \
     --emb_dirs /home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B

@@ -29,7 +29,6 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, PretrainedConfig
-from skimage.feature import local_binary_pattern
 
 
 logger = get_logger(__name__)
@@ -513,56 +512,60 @@ def train_one_epoch(
     return [unet, text_encoder]
 
 
-def adaptive_frequency_attack(image, steps=5, alpha=0.005):
+def adaptive_frequency_perturbation(x, mask, alpha=0.005):
     """
-    Applies an adaptive frequency perturbation in the DCT domain on a per-channel basis,
-    incorporating advanced image processing techniques.
-    Input image is assumed to be a numpy array with shape [C, H, W] and values in [0, 1].
+    Applies adaptive frequency perturbation in the DCT domain.
+    x: input image tensor in [0, 1], shape (B, C, H, W)
+    mask: perceptual saliency mask of same shape
     """
-    perturbed = image.copy()
-    for _ in range(steps):
-        update = np.zeros_like(perturbed)
-        for c in range(perturbed.shape[0]):
-            channel = perturbed[c]
-            
-            # Convert to 8-bit grayscale image for processing
-            channel_gray = (channel * 255).astype(np.uint8)
-            
-            # 1. Advanced Edge Detection using Canny
-            edges = cv2.Canny(channel_gray, threshold1=100, threshold2=200)
-            edges = edges.astype(np.float32) / 255.0
-            
-            # 2. Texture Analysis using Gabor Filters
-            gabor_kernel = cv2.getGaborKernel(ksize=(5, 5), sigma=1.0, theta=0, lambd=10.0, gamma=0.5, psi=0)
-            gabor_response = cv2.filter2D(channel_gray, cv2.CV_32F, gabor_kernel)
-            gabor_response = np.abs(gabor_response)
-            gabor_response = (gabor_response - gabor_response.min()) / (gabor_response.max() - gabor_response.min() + 1e-8)
-            
-            # 3. Texture Analysis using Local Binary Patterns (LBP)
-            lbp = local_binary_pattern(channel_gray, P=8, R=1, method='uniform')
-            lbp = lbp.astype(np.float32)
-            lbp = (lbp - lbp.min()) / (lbp.max() - lbp.min() + 1e-8)
-            
-            # Combine edge and texture information into a single mask
-            combined_mask = (edges + gabor_response + lbp) / 3.0
-            
-            # 4. Frequency Domain Analysis using DCT
-            dct_channel = cv2.dct(channel.astype(np.float32))
-            abs_dct = np.abs(dct_channel)
-            abs_dct = (abs_dct - abs_dct.min()) / (abs_dct.max() - abs_dct.min() + 1e-8)
-            
-            # Apply combined mask to DCT coefficients
-            dct_perturb = alpha * combined_mask * abs_dct
-            dct_channel_updated = dct_channel + dct_perturb
-            
-            # Inverse DCT to obtain the perturbed channel
-            channel_updated = cv2.idct(dct_channel_updated)
-            update[c] = channel_updated - channel
-        
-        perturbed = perturbed + update
-        perturbed = np.clip(perturbed, 0, 1)
-    
-    return torch.tensor(perturbed)
+    dct = torch.fft.fft2(x)
+    abs_dct = dct.abs()
+
+    # Convert mask to frequency domain
+    mask_dct = torch.fft.fft2(mask).abs()
+    mask_dct = (mask_dct - mask_dct.min()) / (mask_dct.max() - mask_dct.min() + 1e-8)
+
+    dct_perturbed = dct + alpha * mask_dct * abs_dct
+    x_perturbed = torch.fft.ifft2(dct_perturbed).real
+    return x_perturbed.clamp(0, 1)
+
+
+def perceptual_mask(x):
+    """
+    Computes a saliency mask using Sobel edges + Laplacian texture response.
+    x: (B, C, H, W) in [0, 1]
+    Returns: mask of shape (B, C, H, W) in [0, 1]
+    """
+    device = x.device
+    B, C, H, W = x.shape
+
+    # --- Sobel edge detection ---
+    sobel_x = torch.tensor(
+        [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32, device=device
+    ).view(1, 1, 3, 3)
+    sobel_y = sobel_x.transpose(2, 3)
+
+    sobel_x = sobel_x.expand(C, 1, 3, 3)
+    sobel_y = sobel_y.expand(C, 1, 3, 3)
+
+    edge_x = F.conv2d(x, sobel_x, padding=1, groups=C)
+    edge_y = F.conv2d(x, sobel_y, padding=1, groups=C)
+    edge_map = torch.sqrt(edge_x**2 + edge_y**2)
+
+    # --- Texture: Laplacian ---
+    lap_kernel = torch.tensor(
+        [[0, 1, 0], [1, -4, 1], [0, 1, 0]], dtype=torch.float32, device=device
+    ).view(1, 1, 3, 3)
+    lap_kernel = lap_kernel.expand(C, 1, 3, 3)
+    texture_map = F.conv2d(x, lap_kernel, padding=1, groups=C).abs()
+
+    # Normalize both maps
+    edge_map = (edge_map - edge_map.min()) / (edge_map.max() - edge_map.min() + 1e-8)
+    texture_map = (texture_map - texture_map.min()) / (
+        texture_map.max() - texture_map.min() + 1e-8
+    )
+
+    return (edge_map + texture_map) / 2.0
 
 
 def pgd_attack(
@@ -575,52 +578,56 @@ def pgd_attack(
     original_images: torch.Tensor,
     target_tensor: torch.Tensor,
     num_steps: int,
-    alpha_dct=0.005,  # expose alpha_dct as an argument
+    alpha_dct=0.005,
 ):
-    """Return new perturbed data with an additional adaptive frequency perturbation step"""
+    """
+    PGD-style attack using DCT frequency perturbation guided by gradients.
+    """
     unet, text_encoder = models
-    weight_dtype = torch.bfloat16
     device = torch.device("cuda")
+    weight_dtype = torch.bfloat16
 
     vae.to(device, dtype=weight_dtype)
     text_encoder.to(device, dtype=weight_dtype)
     unet.to(device, dtype=weight_dtype)
 
-    perturbed_images = data_tensor.detach().clone()
-    perturbed_images.requires_grad_(True)
+    alpha = args.pgd_alpha
+    eps = args.pgd_eps
 
-    input_ids = tokenizer(
-        args.instance_prompt,
-        truncation=True,
-        padding="max_length",
-        max_length=tokenizer.model_max_length,
-        return_tensors="pt",
-    ).input_ids.repeat(len(data_tensor), 1)
+    perturbed_images = data_tensor.detach().clone().to(device)
+    original_images = original_images.to(device)
+
+    input_ids = (
+        tokenizer(
+            args.instance_prompt,
+            truncation=True,
+            padding="max_length",
+            max_length=tokenizer.model_max_length,
+            return_tensors="pt",
+        )
+        .input_ids.repeat(len(data_tensor), 1)
+        .to(device)
+    )
 
     for step in range(num_steps):
-        perturbed_images.requires_grad = True
+        perturbed_images.requires_grad_(True)
+
         latents = vae.encode(
-            perturbed_images.to(device, dtype=weight_dtype)
+            perturbed_images.to(dtype=weight_dtype)
         ).latent_dist.sample()
         latents = latents * vae.config.scaling_factor
-
-        # Sample noise to add to latents
         noise = torch.randn_like(latents)
-        bsz = latents.shape[0]
         timesteps = torch.randint(
-            0, noise_scheduler.config.num_train_timesteps, (bsz,), device=latents.device
-        )
-        timesteps = timesteps.long()
-        # Add noise to the latents according to the noise magnitude at each timestep
+            0,
+            noise_scheduler.config.num_train_timesteps,
+            (latents.shape[0],),
+            device=device,
+        ).long()
         noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
-
-        # Get the text embedding for conditioning
-        encoder_hidden_states = text_encoder(input_ids.to(device))[0]
-
-        # Predict the noise residual
+        encoder_hidden_states = text_encoder(input_ids)[0]
         model_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
 
-        # Get the target for loss depending on the prediction type
+        # Compute diffusion loss
         if noise_scheduler.config.prediction_type == "epsilon":
             target = noise
         elif noise_scheduler.config.prediction_type == "v_prediction":
@@ -630,11 +637,8 @@ def pgd_attack(
                 f"Unknown prediction type {noise_scheduler.config.prediction_type}"
             )
 
-        unet.zero_grad()
-        text_encoder.zero_grad()
         loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
 
-        # target-shift loss
         if target_tensor is not None:
             xtm1_pred = torch.cat(
                 [
@@ -649,33 +653,32 @@ def pgd_attack(
             xtm1_target = noise_scheduler.add_noise(target_tensor, noise, timesteps - 1)
             loss = loss - F.mse_loss(xtm1_pred, xtm1_target)
 
+        unet.zero_grad()
+        text_encoder.zero_grad()
+        vae.zero_grad()
+        if perturbed_images.grad is not None:
+            perturbed_images.grad.zero_()
         loss.backward()
 
-        alpha = args.pgd_alpha
-        eps = args.pgd_eps
+        # Get gradient mask and apply DCT frequency perturbation
+        grad_mask = perturbed_images.grad.detach().abs()
+        grad_mask = (grad_mask - grad_mask.min()) / (
+            grad_mask.max() - grad_mask.min() + 1e-8
+        )
 
-        # Standard PGD update step
-        adv_images = perturbed_images + alpha * perturbed_images.grad.sign()
-        eta = torch.clamp(adv_images - original_images, min=-eps, max=+eps)
-        perturbed_images = torch.clamp(original_images + eta, min=-1, max=+1).detach_()
+        images_for_dct = ((perturbed_images + 1) / 2.0).clamp(0, 1)
+        dct_perturbed = adaptive_frequency_perturbation(
+            images_for_dct.detach(), grad_mask, alpha=alpha_dct
+        )
+        dct_perturbed = dct_perturbed * 2 - 1  # Back to [-1, 1]
 
-        # ---- Additional Adaptive Frequency Perturbation ----
-        # Convert images from [-1, 1] to [0, 1] for DCT processing.
-        perturbed_images_cpu = perturbed_images.detach().cpu()
-        batch_size = perturbed_images_cpu.shape[0]
-        perturbed_list = []
-        for i in range(batch_size):
-            img = perturbed_images_cpu[i]
-            img_np = ((img + 1) / 2.0).numpy()
-            img_np_perturbed = adaptive_frequency_attack(
-                img_np, steps=1, alpha=alpha_dct
-            ).numpy()
-            perturbed_list.append(torch.tensor(img_np_perturbed))
-        perturbed_images = torch.stack(perturbed_list, dim=0)
-        perturbed_images = perturbed_images * 2 - 1
-        # -----------------------------------------------------
+        # PGD update
+        adv_images = dct_perturbed
+        eta = torch.clamp(adv_images - original_images, min=-eps, max=eps)
+        perturbed_images = torch.clamp(original_images + eta, min=-1, max=1).detach()
 
-        print(f"PGD loss - step {step}, loss: {loss.detach().item()}")
+        print(f"[Step {step}] Loss: {loss.item():.4f}")
+
     return perturbed_images
 
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=dreambooth_adaptive   # Job name
+#SBATCH --job-name=dreambooth_adaptive_self   # Job name
 #SBATCH --time=6:00:00                 # Time limit hrs:min:sec
 #SBATCH --gres=gpu:a100-40:1
 #SBATCH --mail-type=ALL                  # Get email for all status updates
@@ -10,7 +10,7 @@
 source ~/.bashrc
 conda activate dreambooth
 
-export EXPERIMENT_NAME="ASPL_adaptive_torch"
+export EXPERIMENT_NAME="ASPL_adaptive_torch_self_gradient"
 export MODEL_PATH="/home/e/e0407638/github/Anti-DreamBooth/stable-diffusion"
 export CLEAN_TRAIN_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_A" 
 export CLEAN_ADV_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B"
@@ -23,7 +23,7 @@ mkdir -p $OUTPUT_DIR
 cp -r $CLEAN_TRAIN_DIR $OUTPUT_DIR/image_clean
 cp -r $CLEAN_ADV_DIR $OUTPUT_DIR/image_before_addding_noise
 
-accelerate launch attacks/aspl_adaptive_torch.py \
+accelerate launch attacks/aspl_adaptive_torch_self_gradient.py \
   --pretrained_model_name_or_path=$MODEL_PATH  \
   --enable_xformers_memory_efficient_attention \
   --instance_data_dir_for_train=$CLEAN_TRAIN_DIR \
@@ -41,8 +41,7 @@ accelerate launch attacks/aspl_adaptive_torch.py \
   --train_batch_size=1 \
   --max_train_steps=50 \
   --max_f_train_steps=3 \
-  # changed: --max_adv_train_steps=6 \
-  --max_adv_train_steps=20 \ 
+  --max_adv_train_steps=6 \
   --checkpointing_iterations=10 \
   --learning_rate=5e-7 \
   --pgd_alpha=5e-3 \
@@ -119,10 +118,10 @@ conda activate dreambooth-evaluate
 
 
 python evaluations/ism_fdfr.py \
-    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/ASPL_adaptive_torch/n000050_DREAMBOOTH/checkpoint-1000/dreambooth/a_photo_of_sks_person \
+    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH/checkpoint-1000/dreambooth/a_photo_of_sks_person \
     --emb_dirs /home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B
 
 
 python evaluations/ism_fdfr.py \
-    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/ASPL_adaptive_torch/n000050_DREAMBOOTH_compressed/checkpoint-1000/dreambooth/a_photo_of_sks_person \
+    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH_compressed/checkpoint-1000/dreambooth/a_photo_of_sks_person \
     --emb_dirs /home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B

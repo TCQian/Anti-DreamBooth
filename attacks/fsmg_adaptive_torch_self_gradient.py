@@ -665,43 +665,26 @@ def main(args):
         text_encoder.train()
     for _ in range(args.max_train_steps):
         with accelerator.accumulate(unet):
-            # --- Step 1: Compute Perceptual Mask and DCT Perturbation ---
+            # Step 1: Prepare perturbed images
             pertubed_images.requires_grad_(True)
 
-            mask = perceptual_mask(pertubed_images)
-
-            images_freq_perturbed = adaptive_frequency_perturbation(
-                pertubed_images, mask, alpha=args.pgd_alpha
-            )
-            images_freq_perturbed = images_freq_perturbed * 2 - 1  # Back to [-1, 1]
-            images_freq_perturbed.requires_grad_(True)
-            images_freq_perturbed.retain_grad()
-
-            # --- Step 2: Diffusion Forward Pass ---
+            # Forward through diffusion pipeline
             latents = vae.encode(
-                images_freq_perturbed.to(accelerator.device, dtype=weight_dtype)
+                pertubed_images.to(accelerator.device, dtype=weight_dtype)
             ).latent_dist.sample()
-            latents = latents * vae.config.scaling_factor  # N=4, C, 64, 64
+            latents = latents * vae.config.scaling_factor
 
-            # Sample noise that we'll add to the latents
             noise = torch.randn_like(latents)
             bsz = latents.shape[0]
-            # Sample a random timestep for each image
             timesteps = torch.randint(
                 0,
                 noise_scheduler.config.num_train_timesteps,
                 (bsz,),
                 device=latents.device,
             ).long()
-
-            # Add noise to the latents according to the noise magnitude at each timestep
-            # (this is the forward diffusion process)
             noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
-
-            # Get the text embedding for conditioning
             encoder_hidden_states = text_encoder(input_ids.to(accelerator.device))[0]
 
-            # Predict the noise residual
             model_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
 
             # Get the target for loss depending on the prediction type
@@ -741,12 +724,23 @@ def main(args):
 
             accelerator.backward(loss)
 
-            # PGD: now we update the images
-            grad = images_freq_perturbed.grad
-            alpha = args.pgd_alpha
-            eps = args.pgd_eps
-            adv_images = pertubed_images + alpha * grad.sign()
-            eta = torch.clamp(adv_images - original_images, min=-eps, max=eps)
+            # Step 2: Gradient-Guided Frequency Perturbation
+            grad_mask = pertubed_images.grad.detach().abs()
+            grad_mask = (grad_mask - grad_mask.min()) / (
+                grad_mask.max() - grad_mask.min() + 1e-8
+            )
+
+            x_dct_input = ((pertubed_images + 1) / 2.0).clamp(0, 1)
+            freq_perturbed = adaptive_frequency_perturbation(
+                x_dct_input, grad_mask, alpha=args.pgd_alpha
+            )
+            freq_perturbed = freq_perturbed * 2 - 1  # back to [-1, 1]
+
+            # Step 5: PGD-style update
+            adv_images = freq_perturbed
+            eta = torch.clamp(
+                adv_images - original_images, min=-args.pgd_eps, max=args.pgd_eps
+            )
             pertubed_images = torch.clamp(original_images + eta, min=-1, max=1).detach()
 
         # Checks if the accelerator has performed an optimization step behind the scenes

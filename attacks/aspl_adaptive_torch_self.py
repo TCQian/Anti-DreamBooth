@@ -520,7 +520,12 @@ def adaptive_frequency_perturbation(x, mask, alpha=0.005):
     """
     dct = torch.fft.fft2(x)
     abs_dct = dct.abs()
-    dct_perturbed = dct + alpha * mask * abs_dct
+
+    # Convert mask to frequency domain
+    mask_dct = torch.fft.fft2(mask).abs()
+    mask_dct = (mask_dct - mask_dct.min()) / (mask_dct.max() - mask_dct.min() + 1e-8)
+
+    dct_perturbed = dct + alpha * mask_dct * abs_dct
     x_perturbed = torch.fft.ifft2(dct_perturbed).real
     return x_perturbed.clamp(0, 1)
 
@@ -607,13 +612,11 @@ def pgd_attack(
     for step in range(num_steps):
         perturbed_images.requires_grad_(True)
 
-        # Convert to [0, 1] for DCT
-        images_for_dct = ((perturbed_images + 1) / 2.0).clamp(0, 1)
-        mask = perceptual_mask(images_for_dct)
+        mask = perceptual_mask(perturbed_images)
 
         # Apply adaptive frequency perturbation
         images_freq_perturbed = adaptive_frequency_perturbation(
-            images_for_dct, mask, alpha=alpha_dct
+            perturbed_images, mask, alpha=alpha_dct
         )
         images_freq_perturbed = images_freq_perturbed * 2 - 1  # Back to [-1, 1]
         images_freq_perturbed.requires_grad_(True)
