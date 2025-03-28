@@ -756,7 +756,7 @@ def main(args):
                         ).save(save_path)
                     print(f"Saved noise at step {global_step} to {save_folder}")
 
-        logs = {"loss": loss.detach().item()}
+        logs = {"loss": combined_loss.detach().item()}
         progress_bar.set_postfix(**logs)
         accelerator.log(logs, step=global_step)
 
