@@ -4,7 +4,6 @@ import hashlib
 import itertools
 import logging
 import os
-import cv2
 from pathlib import Path
 
 import datasets
@@ -632,9 +631,10 @@ def pgd_attack(
         dct_perturbed.requires_grad_(True)
 
         # === Forward pass 2 (DCT-perturbed input) ===
-        latents_dct = vae.encode(
-            dct_perturbed.to(dtype=weight_dtype)
-        ).latent_dist.sample()
+        with torch.no_grad():
+            latents_dct = vae.encode(
+                dct_perturbed.to(dtype=weight_dtype)
+            ).latent_dist.sample()
         latents_dct = latents_dct * vae.config.scaling_factor
         noisy_latents_dct = noise_scheduler.add_noise(latents_dct, noise, timesteps)
         model_pred_dct = unet(

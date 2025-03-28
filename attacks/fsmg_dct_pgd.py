@@ -695,9 +695,10 @@ def main(args):
             dct_perturbed.requires_grad_(True)
 
             # === Step 4: Second forward pass on DCT-perturbed ===
-            latents_dct = vae.encode(
-                dct_perturbed.to(accelerator.device).to(dtype=weight_dtype)
-            ).latent_dist.sample()
+            with torch.no_grad():
+                latents_dct = vae.encode(
+                    dct_perturbed.to(accelerator.device).to(dtype=weight_dtype)
+                ).latent_dist.sample()
             latents_dct = latents_dct * vae.config.scaling_factor
             noisy_latents_dct = noise_scheduler.add_noise(latents_dct, noise, timesteps)
             model_pred_dct = unet(

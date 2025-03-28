@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=dreambooth_original   # Job name
+#SBATCH --job-name=aspl_dct_mask       # Job name
 #SBATCH --time=6:00:00                 # Time limit hrs:min:sec
 #SBATCH --gres=gpu:a100-40:1
 #SBATCH --mail-type=ALL                  # Get email for all status updates
@@ -10,7 +10,7 @@
 source ~/.bashrc
 conda activate dreambooth
 
-export EXPERIMENT_NAME="ASPL"
+export EXPERIMENT_NAME="ASPL_dct_mask"
 export MODEL_PATH="/home/e/e0407638/github/Anti-DreamBooth/stable-diffusion"
 export CLEAN_TRAIN_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_A" 
 export CLEAN_ADV_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B"
@@ -23,7 +23,7 @@ mkdir -p $OUTPUT_DIR
 cp -r $CLEAN_TRAIN_DIR $OUTPUT_DIR/image_clean
 cp -r $CLEAN_ADV_DIR $OUTPUT_DIR/image_before_addding_noise
 
-accelerate launch attacks/aspl.py \
+accelerate launch attacks/aspl_dct_mask.py \
   --pretrained_model_name_or_path=$MODEL_PATH  \
   --enable_xformers_memory_efficient_attention \
   --instance_data_dir_for_train=$CLEAN_TRAIN_DIR \
@@ -78,7 +78,8 @@ accelerate launch train_dreambooth.py \
   --prior_generation_precision=bf16 \
   --sample_batch_size=8
 
-  # ------------------------- Compress instance images -------------------------
+
+# ------------------------- Compress instance images -------------------------
 python jpeg_compress.py $OUTPUT_DIR/noise-ckpt/50 --quality 75 --output_dir $OUTPUT_DIR/noise-ckpt/50_compressed
 
 
@@ -111,3 +112,17 @@ accelerate launch train_dreambooth.py \
   --mixed_precision=bf16 \
   --prior_generation_precision=bf16 \
   --sample_batch_size=8
+
+
+conda activate dreambooth-evaluate
+
+echo "ISM: Running evaluation for ASPL DCT Mask"
+
+python evaluations/ism_fdfr.py \
+    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH/checkpoint-1000/dreambooth/a_photo_of_sks_person \
+    --emb_dirs /home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B
+
+
+python evaluations/ism_fdfr.py \
+    --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH_compressed/checkpoint-1000/dreambooth/a_photo_of_sks_person \
+    --emb_dirs /home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B

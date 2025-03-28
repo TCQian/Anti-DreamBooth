@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=dreambooth_fsmg   # Job name
+#SBATCH --job-name=fsmg   # Job name
 #SBATCH --time=6:00:00                 # Time limit hrs:min:sec
 #SBATCH --gres=gpu:a100-40:1
 #SBATCH --mail-type=ALL                  # Get email for all status updates
@@ -135,6 +135,7 @@ accelerate launch train_dreambooth.py \
 
 conda activate dreambooth-evaluate
 
+echo "ISM: Running Evaluation for FSMG"
 
 python evaluations/ism_fdfr.py \
     --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH/checkpoint-1000/dreambooth/a_photo_of_sks_person \

@@ -1,16 +1,16 @@
 #!/bin/bash
 
-#SBATCH --job-name=dreambooth_fsmg_adaptive_self   # Job name
-#SBATCH --time=6:00:00                 # Time limit hrs:min:sec
+#SBATCH --job-name=fsmg_dct_pgd   # Job name
+#SBATCH --time=6:00:00                      # Time limit hrs:min:sec
 #SBATCH --gres=gpu:a100-40:1
-#SBATCH --mail-type=ALL                  # Get email for all status updates
-#SBATCH --mail-user=e0407638@u.nus.edu   # Email for notifications
-#SBATCH --mem=16G                        # Request 16GB of memory
+#SBATCH --mail-type=ALL                     # Get email for all status updates
+#SBATCH --mail-user=e0407638@u.nus.edu      # Email for notifications
+#SBATCH --mem=16G                           # Request 16GB of memory
 
 source ~/.bashrc
 conda activate dreambooth
 
-export EXPERIMENT_NAME="FSMG_adaptive_torch_self"
+export EXPERIMENT_NAME="FSMG_dct_pgd"
 export MODEL_PATH="/home/e/e0407638/github/Anti-DreamBooth/stable-diffusion"
 export CLASS_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/class-person"
 export CLEAN_TRAIN_DIR="/home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_A"
@@ -52,7 +52,7 @@ export OUTPUT_DIR="/home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_N
 mkdir -p $OUTPUT_DIR
 cp -r $CLEAN_ADV_DIR $OUTPUT_DIR/image_before_addding_noise
 
-accelerate launch attacks/fsmg_adaptive_torch_self.py \
+accelerate launch attacks/fsmg_dct_pgd.py \
   --pretrained_model_name_or_path="$REF_MODEL_PATH/checkpoint-1000"  \
   --enable_xformers_memory_efficient_attention \
   --train_text_encoder \
@@ -135,6 +135,7 @@ accelerate launch train_dreambooth.py \
 
 conda activate dreambooth-evaluate
 
+echo "ISM: Running Evaluation for FSMG DCT PGD"
 
 python evaluations/ism_fdfr.py \
     --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH/checkpoint-1000/dreambooth/a_photo_of_sks_person \
