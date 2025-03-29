@@ -117,12 +117,13 @@ accelerate launch train_dreambooth.py \
 conda activate dreambooth-evaluate
 
 echo "ISM: Running evaluation for ASPL DCT Mask"
-
 python evaluations/ism_fdfr.py \
     --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH/checkpoint-1000/dreambooth/a_photo_of_sks_person \
     --emb_dirs /home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B
-
-
 python evaluations/ism_fdfr.py \
     --data_dir /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH_compressed/checkpoint-1000/dreambooth/a_photo_of_sks_person \
     --emb_dirs /home/e/e0407638/github/Anti-DreamBooth/data/n000050/set_B
+
+echo "Brisque: Running evaluation for ASPL DCT Mask"
+python evaluations/brisques.py --prompt_path /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH/checkpoint-1000/dreambooth/a_photo_of_sks_person
+python evaluations/brisques.py --prompt_path /home/e/e0407638/github/Anti-DreamBooth/outputs/$EXPERIMENT_NAME/n000050_DREAMBOOTH_compressed/checkpoint-1000/dreambooth/a_photo_of_sks_person
